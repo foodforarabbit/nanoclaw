@@ -35,6 +35,8 @@ export class DiscordChannel implements Channel {
   private client: Client | null = null;
   private opts: DiscordChannelOpts;
   private botToken: string;
+  /** Channel ID auto-created by ensureChannel() — only this one gets deleted on shutdown */
+  private autoCreatedChannelId: string | null = null;
 
   constructor(botToken: string, opts: DiscordChannelOpts) {
     this.botToken = botToken;
@@ -96,6 +98,14 @@ export class DiscordChannel implements Channel {
             content = `@${ASSISTANT_NAME} ${content}`;
           }
         }
+      }
+
+      // Warn if content is empty — likely MESSAGE_CONTENT intent not enabled
+      if (!content && message.attachments.size === 0) {
+        logger.warn(
+          { chatJid, chatName },
+          'Received message with empty content — enable MESSAGE_CONTENT privileged intent in Discord Developer Portal',
+        );
       }
 
       // Handle attachments — store placeholders so the agent knows something was sent
@@ -194,23 +204,46 @@ export class DiscordChannel implements Channel {
   /**
    * Auto-create and register a Discord channel if none exists.
    * Only runs when DISCORD_GUILD_ID is set and no dc:* channel is registered.
+   * Also ensures existing auto-channels have requiresTrigger=false.
    */
   private async ensureChannel(): Promise<void> {
     if (!DISCORD_GUILD_ID || !this.client || !this.opts.registerGroup) return;
 
     const groups = this.opts.registeredGroups();
-    const hasDiscordChannel = Object.keys(groups).some((jid) =>
+    const existingDcJid = Object.keys(groups).find((jid) =>
       jid.startsWith('dc:'),
     );
-    if (hasDiscordChannel) return;
+
+    // Ensure existing auto-channels have requiresTrigger=false
+    if (existingDcJid) {
+      const existing = groups[existingDcJid];
+      // Track it so we can delete it on shutdown
+      if (existing.name.startsWith('nc-')) {
+        this.autoCreatedChannelId = existingDcJid.replace(/^dc:/, '');
+      }
+      if (existing.requiresTrigger !== false) {
+        logger.info(
+          { jid: existingDcJid },
+          'Updating existing Discord channel to requiresTrigger=false',
+        );
+        this.opts.registerGroup(existingDcJid, {
+          ...existing,
+          requiresTrigger: false,
+        });
+      }
+      return;
+    }
 
     try {
       const guild = await this.client.guilds.fetch(DISCORD_GUILD_ID);
 
       // Build channel name from Codespace env vars or hostname
-      const codespaceName = process.env.CODESPACE_NAME;
+      const codespaceName =
+        process.env.CODESPACE_NAME || process.env.GITHUB_CODESPACE_TOKEN
+          ? process.env.CODESPACE_NAME || os.hostname()
+          : null;
       const channelName = codespaceName
-        ? `nc-${codespaceName}`.slice(0, 100)
+        ? `nc-${codespaceName}`.slice(0, 100).toLowerCase()
         : `nc-local-${os.hostname()}`.slice(0, 100).toLowerCase();
 
       const channel = await guild.channels.create({
@@ -219,6 +252,7 @@ export class DiscordChannel implements Channel {
       });
 
       const jid = `dc:${channel.id}`;
+      this.autoCreatedChannelId = channel.id;
       const folderName = channelName
         .replace(/[^a-zA-Z0-9-]/g, '-')
         .replace(/-+/g, '-')
@@ -228,6 +262,7 @@ export class DiscordChannel implements Channel {
         name: channelName,
         folder: folderName,
         trigger: `@${ASSISTANT_NAME}`,
+        requiresTrigger: false,
         added_at: new Date().toISOString(),
       });
 
@@ -250,11 +285,16 @@ export class DiscordChannel implements Channel {
           `**NanoClaw is online**\n`,
           `Codespace: \`${codespaceName}\``,
         ];
-        if (repo) lines.push(`Repository: \`${repo}\`${branch ? ` (branch: \`${branch}\`)` : ''}`);
+        if (repo)
+          lines.push(
+            `Repository: \`${repo}\`${branch ? ` (branch: \`${branch}\`)` : ''}`,
+          );
         if (user) lines.push(`User: \`${user}\``);
         lines.push('');
         lines.push(`Open in browser: https://${codespaceName}.github.dev`);
-        lines.push(`Open in VS Code: https://github.com/codespaces/${codespaceName}`);
+        lines.push(
+          `Open in VS Code: https://github.com/codespaces/${codespaceName}`,
+        );
         lines.push('');
         lines.push(`Send any message here to interact with the agent.`);
         welcome = lines.join('\n');
@@ -326,11 +366,35 @@ export class DiscordChannel implements Channel {
   }
 
   async disconnect(): Promise<void> {
-    if (this.client) {
-      this.client.destroy();
-      this.client = null;
-      logger.info('Discord bot stopped');
+    if (!this.client) return;
+
+    // Delete auto-created channel on shutdown (Codespace going away)
+    if (this.autoCreatedChannelId) {
+      try {
+        const channel = await this.client.channels.fetch(
+          this.autoCreatedChannelId,
+        );
+        if (channel) {
+          if ('send' in channel) {
+            await (channel as TextChannel).send('**NanoClaw shutting down** — deleting this channel.');
+          }
+          await channel.delete();
+          logger.info(
+            { channelId: this.autoCreatedChannelId },
+            'Deleted auto-created Discord channel on shutdown',
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { channelId: this.autoCreatedChannelId, err },
+          'Failed to delete auto-created Discord channel on shutdown',
+        );
+      }
     }
+
+    this.client.destroy();
+    this.client = null;
+    logger.info('Discord bot stopped');
   }
 
   async setTyping(jid: string, isTyping: boolean): Promise<void> {

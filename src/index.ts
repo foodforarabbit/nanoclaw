@@ -236,6 +236,17 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
       );
       return true;
     }
+
+    // Surface the error to the user so they know something went wrong
+    try {
+      await channel.sendMessage(
+        chatJid,
+        `⚠️ Agent error — check logs in \`groups/${group.folder}/logs/\``,
+      );
+    } catch {
+      // Best-effort; don't let error reporting block the retry flow
+    }
+
     // Roll back cursor so retries can re-process these messages
     lastAgentTimestamp[chatJid] = previousCursor;
     saveState();
@@ -295,7 +306,8 @@ async function runAgent(
     : undefined;
 
   try {
-    const runner = RUNNER_MODE === 'direct' ? runDirectAgent : runContainerAgent;
+    const runner =
+      RUNNER_MODE === 'direct' ? runDirectAgent : runContainerAgent;
     const output = await runner(
       group,
       {
@@ -455,11 +467,22 @@ function ensureContainerSystemRunning(): void {
 }
 
 async function main(): Promise<void> {
+  const t0 = Date.now();
+  const bench = (label: string) => {
+    const elapsed = Date.now() - t0;
+    logger.info({ ms: elapsed }, `[startup] ${label}`);
+    console.log(`  [${elapsed}ms] ${label}`);
+  };
+
   logger.info({ mode: RUNNER_MODE }, 'Starting NanoClaw');
   ensureContainerSystemRunning();
+  bench('Container system checked');
+
   initDatabase();
-  logger.info('Database initialized');
+  bench('Database initialized');
+
   loadState();
+  bench('State loaded');
 
   // Graceful shutdown handlers
   const shutdown = async (signal: string) => {
@@ -492,13 +515,17 @@ async function main(): Promise<void> {
     });
     channels.push(discord);
     await discord.connect();
+    bench('Discord connected');
   }
 
   if (!DISCORD_ONLY) {
     whatsapp = new WhatsAppChannel(channelOpts);
     channels.push(whatsapp);
     await whatsapp.connect();
+    bench('WhatsApp connected');
   }
+
+  bench('All channels ready');
 
   // Start subsystems (independently of connection handler)
   startSchedulerLoop({
@@ -533,6 +560,8 @@ async function main(): Promise<void> {
   });
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
+  bench('Subsystems started — ready for messages');
+
   startMessageLoop().catch((err) => {
     logger.fatal({ err }, 'Message loop crashed unexpectedly');
     process.exit(1);
