@@ -729,6 +729,37 @@ describe('DiscordChannel', () => {
       await channel.setTyping('dc:1234567890123456', true);
 
       expect(mockChannel.sendTyping).toHaveBeenCalled();
+
+      await channel.setTyping('dc:1234567890123456', false);
+    });
+
+    it('refreshes typing indicator on interval', async () => {
+      vi.useFakeTimers();
+      const opts = createTestOpts();
+      const channel = new DiscordChannel('test-token', opts);
+      await channel.connect();
+
+      const mockChannel = {
+        send: vi.fn(),
+        sendTyping: vi.fn().mockResolvedValue(undefined),
+      };
+      currentClient().channels.fetch.mockResolvedValue(mockChannel);
+
+      await channel.setTyping('dc:1234567890123456', true);
+      expect(mockChannel.sendTyping).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(mockChannel.sendTyping).toHaveBeenCalledTimes(2);
+
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(mockChannel.sendTyping).toHaveBeenCalledTimes(3);
+
+      await channel.setTyping('dc:1234567890123456', false);
+
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(mockChannel.sendTyping).toHaveBeenCalledTimes(3);
+
+      vi.useRealTimers();
     });
 
     it('does nothing when isTyping is false', async () => {
@@ -738,7 +769,6 @@ describe('DiscordChannel', () => {
 
       await channel.setTyping('dc:1234567890123456', false);
 
-      // channels.fetch should NOT be called
       expect(currentClient().channels.fetch).not.toHaveBeenCalled();
     });
 
