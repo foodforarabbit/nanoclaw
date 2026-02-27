@@ -11,7 +11,8 @@ import fs from 'fs';
 import path from 'path';
 import { CronExpressionParser } from 'cron-parser';
 
-const IPC_DIR = '/workspace/ipc';
+const WORKSPACE_BASE = process.env.NANOCLAW_WORKSPACE_DIR || '/workspace';
+const IPC_DIR = process.env.NANOCLAW_IPC_DIR || path.join(WORKSPACE_BASE, 'ipc');
 const MESSAGES_DIR = path.join(IPC_DIR, 'messages');
 const TASKS_DIR = path.join(IPC_DIR, 'tasks');
 
@@ -46,7 +47,7 @@ server.tool(
     text: z.string().describe('The message text to send'),
     sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
   },
-  async (args) => {
+  async (args: { text: string; sender?: string }) => {
     const data: Record<string, string | undefined> = {
       type: 'message',
       chatJid,
@@ -92,8 +93,7 @@ SCHEDULE VALUE FORMAT (all times are LOCAL timezone):
     context_mode: z.enum(['group', 'isolated']).default('group').describe('group=runs with chat history and memory, isolated=fresh session (include context in prompt)'),
     target_group_jid: z.string().optional().describe('(Main group only) JID of the group to schedule the task for. Defaults to the current group.'),
   },
-  async (args) => {
-    // Validate schedule_value before writing IPC
+  async (args: { prompt: string; schedule_type: 'cron' | 'interval' | 'once'; schedule_value: string; context_mode?: string; target_group_jid?: string }) => {
     if (args.schedule_type === 'cron') {
       try {
         CronExpressionParser.parse(args.schedule_value);
@@ -191,7 +191,7 @@ server.tool(
   'pause_task',
   'Pause a scheduled task. It will not run until resumed.',
   { task_id: z.string().describe('The task ID to pause') },
-  async (args) => {
+  async (args: { task_id: string }) => {
     const data = {
       type: 'pause_task',
       taskId: args.task_id,
@@ -210,7 +210,7 @@ server.tool(
   'resume_task',
   'Resume a paused task.',
   { task_id: z.string().describe('The task ID to resume') },
-  async (args) => {
+  async (args: { task_id: string }) => {
     const data = {
       type: 'resume_task',
       taskId: args.task_id,
@@ -229,7 +229,7 @@ server.tool(
   'cancel_task',
   'Cancel and delete a scheduled task.',
   { task_id: z.string().describe('The task ID to cancel') },
-  async (args) => {
+  async (args: { task_id: string }) => {
     const data = {
       type: 'cancel_task',
       taskId: args.task_id,
@@ -255,7 +255,7 @@ Use available_groups.json to find the JID for a group. The folder name should be
     folder: z.string().describe('Folder name for group files (lowercase, hyphens, e.g., "family-chat")'),
     trigger: z.string().describe('Trigger word (e.g., "@Andy")'),
   },
-  async (args) => {
+  async (args: { jid: string; name: string; folder: string; trigger: string }) => {
     if (!isMain) {
       return {
         content: [{ type: 'text' as const, text: 'Only the main group can register new groups.' }],

@@ -5,6 +5,7 @@ import fs from 'fs';
 import {
   ASSISTANT_NAME,
   MAIN_GROUP_FOLDER,
+  RUNNER_MODE,
   SCHEDULER_POLL_INTERVAL,
   TIMEZONE,
 } from './config.js';
@@ -13,6 +14,7 @@ import {
   runContainerAgent,
   writeTasksSnapshot,
 } from './container-runner.js';
+import { runDirectAgent } from './direct-runner.js';
 import {
   getAllTasks,
   getDueTasks,
@@ -133,7 +135,8 @@ async function runTask(
   };
 
   try {
-    const output = await runContainerAgent(
+    const runner = RUNNER_MODE === 'direct' ? runDirectAgent : runContainerAgent;
+    const output = await runner(
       group,
       {
         prompt: task.prompt,

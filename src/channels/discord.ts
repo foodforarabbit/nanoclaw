@@ -1,6 +1,19 @@
-import { Client, Events, GatewayIntentBits, Message, TextChannel } from 'discord.js';
+import os from 'os';
 
-import { ASSISTANT_NAME, TRIGGER_PATTERN } from '../config.js';
+import {
+  ChannelType,
+  Client,
+  Events,
+  GatewayIntentBits,
+  Message,
+  TextChannel,
+} from 'discord.js';
+
+import {
+  ASSISTANT_NAME,
+  DISCORD_GUILD_ID,
+  TRIGGER_PATTERN,
+} from '../config.js';
 import { logger } from '../logger.js';
 import {
   Channel,
@@ -13,6 +26,7 @@ export interface DiscordChannelOpts {
   onMessage: OnInboundMessage;
   onChatMetadata: OnChatMetadata;
   registeredGroups: () => Record<string, RegisteredGroup>;
+  registerGroup?: (jid: string, group: RegisteredGroup) => void;
 }
 
 export class DiscordChannel implements Channel {
@@ -86,18 +100,20 @@ export class DiscordChannel implements Channel {
 
       // Handle attachments — store placeholders so the agent knows something was sent
       if (message.attachments.size > 0) {
-        const attachmentDescriptions = [...message.attachments.values()].map((att) => {
-          const contentType = att.contentType || '';
-          if (contentType.startsWith('image/')) {
-            return `[Image: ${att.name || 'image'}]`;
-          } else if (contentType.startsWith('video/')) {
-            return `[Video: ${att.name || 'video'}]`;
-          } else if (contentType.startsWith('audio/')) {
-            return `[Audio: ${att.name || 'audio'}]`;
-          } else {
-            return `[File: ${att.name || 'file'}]`;
-          }
-        });
+        const attachmentDescriptions = [...message.attachments.values()].map(
+          (att) => {
+            const contentType = att.contentType || '';
+            if (contentType.startsWith('image/')) {
+              return `[Image: ${att.name || 'image'}]`;
+            } else if (contentType.startsWith('video/')) {
+              return `[Video: ${att.name || 'video'}]`;
+            } else if (contentType.startsWith('audio/')) {
+              return `[Audio: ${att.name || 'audio'}]`;
+            } else {
+              return `[File: ${att.name || 'file'}]`;
+            }
+          },
+        );
         if (content) {
           content = `${content}\n${attachmentDescriptions.join('\n')}`;
         } else {
@@ -157,7 +173,7 @@ export class DiscordChannel implements Channel {
     });
 
     return new Promise<void>((resolve) => {
-      this.client!.once(Events.ClientReady, (readyClient) => {
+      this.client!.once(Events.ClientReady, async (readyClient) => {
         logger.info(
           { username: readyClient.user.tag, id: readyClient.user.id },
           'Discord bot connected',
@@ -166,11 +182,107 @@ export class DiscordChannel implements Channel {
         console.log(
           `  Use /chatid command or check channel IDs in Discord settings\n`,
         );
+
+        await this.ensureChannel();
         resolve();
       });
 
       this.client!.login(this.botToken);
     });
+  }
+
+  /**
+   * Auto-create and register a Discord channel if none exists.
+   * Only runs when DISCORD_GUILD_ID is set and no dc:* channel is registered.
+   */
+  private async ensureChannel(): Promise<void> {
+    if (!DISCORD_GUILD_ID || !this.client || !this.opts.registerGroup) return;
+
+    const groups = this.opts.registeredGroups();
+    const hasDiscordChannel = Object.keys(groups).some((jid) =>
+      jid.startsWith('dc:'),
+    );
+    if (hasDiscordChannel) return;
+
+    try {
+      const guild = await this.client.guilds.fetch(DISCORD_GUILD_ID);
+
+      // Build channel name from Codespace env vars or hostname
+      const codespaceName = process.env.CODESPACE_NAME;
+      const channelName = codespaceName
+        ? `nc-${codespaceName}`.slice(0, 100)
+        : `nc-local-${os.hostname()}`.slice(0, 100).toLowerCase();
+
+      const channel = await guild.channels.create({
+        name: channelName,
+        type: ChannelType.GuildText,
+      });
+
+      const jid = `dc:${channel.id}`;
+      const folderName = channelName
+        .replace(/[^a-zA-Z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .slice(0, 64);
+
+      this.opts.registerGroup(jid, {
+        name: channelName,
+        folder: folderName,
+        trigger: `@${ASSISTANT_NAME}`,
+        added_at: new Date().toISOString(),
+      });
+
+      this.opts.onChatMetadata(
+        jid,
+        new Date().toISOString(),
+        `${guild.name} #${channelName}`,
+        'discord',
+        true,
+      );
+
+      // Post welcome message
+      const repo = process.env.GITHUB_REPOSITORY || '';
+      const branch = process.env.GITHUB_REF_NAME || '';
+      const user = process.env.GITHUB_USER || process.env.USER || '';
+
+      let welcome: string;
+      if (codespaceName) {
+        const lines = [
+          `**NanoClaw is online**\n`,
+          `Codespace: \`${codespaceName}\``,
+        ];
+        if (repo) lines.push(`Repository: \`${repo}\`${branch ? ` (branch: \`${branch}\`)` : ''}`);
+        if (user) lines.push(`User: \`${user}\``);
+        lines.push('');
+        lines.push(`Open in browser: https://${codespaceName}.github.dev`);
+        lines.push(`Open in VS Code: https://github.com/codespaces/${codespaceName}`);
+        lines.push('');
+        lines.push(`Send any message here to interact with the agent.`);
+        welcome = lines.join('\n');
+      } else {
+        welcome = [
+          `**NanoClaw is online**\n`,
+          `Host: \`${os.hostname()}\``,
+          user ? `User: \`${user}\`` : '',
+          `Working directory: \`${process.cwd()}\``,
+          '',
+          `Send any message here to interact with the agent.`,
+        ]
+          .filter(Boolean)
+          .join('\n');
+      }
+
+      await channel.send(welcome);
+      logger.info(
+        { channelName, channelId: channel.id, guildId: DISCORD_GUILD_ID },
+        'Auto-created Discord channel',
+      );
+      console.log(`  Auto-created Discord channel: #${channelName}`);
+    } catch (err) {
+      logger.error(
+        { err, guildId: DISCORD_GUILD_ID },
+        'Failed to auto-create Discord channel',
+      );
+    }
   }
 
   async sendMessage(jid: string, text: string): Promise<void> {

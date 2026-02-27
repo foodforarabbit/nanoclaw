@@ -1,10 +1,7 @@
 {
   "name": "NanoClaw",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
-  "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
-  },
-  "postCreateCommand": "npm install && ./container/build.sh",
+  "postCreateCommand": "npm install && npm run build && cd container/agent-runner && npm install && npm run build",
   "customizations": {
     "vscode": {
       "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
@@ -14,8 +11,10 @@
     }
   },
   "remoteEnv": {
+    "RUNNER_MODE": "direct",
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
     "CLAUDE_CODE_OAUTH_TOKEN": "${localEnv:CLAUDE_CODE_OAUTH_TOKEN}",
-    "DISCORD_BOT_TOKEN": "${localEnv:DISCORD_BOT_TOKEN}"
+    "DISCORD_BOT_TOKEN": "${localEnv:DISCORD_BOT_TOKEN}",
+    "DISCORD_GUILD_ID": "${localEnv:DISCORD_GUILD_ID}"
   }
 }
