@@ -1,3 +1,4 @@
+import fs from 'fs';
 import os from 'os';
 
 import {
@@ -237,11 +238,19 @@ export class DiscordChannel implements Channel {
     try {
       const guild = await this.client.guilds.fetch(DISCORD_GUILD_ID);
 
-      // Build channel name from Codespace env vars or hostname
-      const codespaceName =
-        process.env.CODESPACE_NAME || process.env.GITHUB_CODESPACE_TOKEN
-          ? process.env.CODESPACE_NAME || os.hostname()
-          : null;
+      // Build channel name from Codespace env vars or hostname.
+      // CODESPACE_NAME is set by the Codespace runtime in VS Code terminals
+      // but not in SSH sessions. Fall back to the shared config file.
+      let codespaceName = process.env.CODESPACE_NAME;
+      if (!codespaceName && process.env.CODESPACES === 'true') {
+        try {
+          const envFile = '/workspaces/.codespaces/shared/environment-variables.json';
+          const envData = JSON.parse(fs.readFileSync(envFile, 'utf-8'));
+          codespaceName = envData.CODESPACE_NAME;
+        } catch {
+          // Fall through to hostname
+        }
+      }
       const channelName = codespaceName
         ? `nc-${codespaceName}`.slice(0, 100).toLowerCase()
         : `nc-local-${os.hostname()}`.slice(0, 100).toLowerCase();
@@ -376,7 +385,9 @@ export class DiscordChannel implements Channel {
         );
         if (channel) {
           if ('send' in channel) {
-            await (channel as TextChannel).send('**NanoClaw shutting down** — deleting this channel.');
+            await (channel as TextChannel).send(
+              '**NanoClaw shutting down** — deleting this channel.',
+            );
           }
           await channel.delete();
           logger.info(
