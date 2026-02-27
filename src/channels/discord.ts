@@ -244,7 +244,8 @@ export class DiscordChannel implements Channel {
       let codespaceName = process.env.CODESPACE_NAME;
       if (!codespaceName && process.env.CODESPACES === 'true') {
         try {
-          const envFile = '/workspaces/.codespaces/shared/environment-variables.json';
+          const envFile =
+            '/workspaces/.codespaces/shared/environment-variables.json';
           const envData = JSON.parse(fs.readFileSync(envFile, 'utf-8'));
           codespaceName = envData.CODESPACE_NAME;
         } catch {

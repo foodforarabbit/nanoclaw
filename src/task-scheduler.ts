@@ -135,7 +135,8 @@ async function runTask(
   };
 
   try {
-    const runner = RUNNER_MODE === 'direct' ? runDirectAgent : runContainerAgent;
+    const runner =
+      RUNNER_MODE === 'direct' ? runDirectAgent : runContainerAgent;
     const output = await runner(
       group,
       {

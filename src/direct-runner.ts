@@ -16,10 +16,7 @@ import {
   TIMEZONE,
 } from './config.js';
 import { readEnvFile } from './env.js';
-import {
-  resolveGroupFolderPath,
-  resolveGroupIpcPath,
-} from './group-folder.js';
+import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
 import { logger } from './logger.js';
 import { ContainerInput, ContainerOutput } from './container-runner.js';
 import { RegisteredGroup } from './types.js';
@@ -142,7 +139,7 @@ export async function runDirectAgent(
   );
 
   const env: Record<string, string> = {
-    ...process.env as Record<string, string>,
+    ...(process.env as Record<string, string>),
     TZ: TIMEZONE,
     HOME: groupSessionsDir.replace(/\/\.claude$/, ''),
     NANOCLAW_DIRECT_MODE: '1',
@@ -228,9 +225,7 @@ export async function runDirectAgent(
       if (onOutput) {
         parseBuffer += chunk;
         let startIdx: number;
-        while (
-          (startIdx = parseBuffer.indexOf(OUTPUT_START_MARKER)) !== -1
-        ) {
+        while ((startIdx = parseBuffer.indexOf(OUTPUT_START_MARKER)) !== -1) {
           const endIdx = parseBuffer.indexOf(OUTPUT_END_MARKER, startIdx);
           if (endIdx === -1) break;
 

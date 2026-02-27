@@ -79,5 +79,6 @@ export const DISCORD_GUILD_ID =
   process.env.DISCORD_GUILD_ID || envConfig.DISCORD_GUILD_ID || '';
 
 // Runner mode: 'container' (default, uses Docker) or 'direct' (subprocess, no Docker)
-export const RUNNER_MODE: 'container' | 'direct' =
-  (process.env.RUNNER_MODE || envConfig.RUNNER_MODE || 'container') as 'container' | 'direct';
+export const RUNNER_MODE: 'container' | 'direct' = (process.env.RUNNER_MODE ||
+  envConfig.RUNNER_MODE ||
+  'container') as 'container' | 'direct';
