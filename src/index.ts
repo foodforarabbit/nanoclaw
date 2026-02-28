@@ -26,6 +26,7 @@ import {
 } from './container-runtime.js';
 import {
   getAllChats,
+  deleteRegisteredGroup,
   getAllRegisteredGroups,
   getAllSessions,
   getAllTasks,
@@ -104,6 +105,12 @@ function registerGroup(jid: string, group: RegisteredGroup): void {
     { jid, name: group.name, folder: group.folder },
     'Group registered',
   );
+}
+
+function unregisterGroup(jid: string): void {
+  delete registeredGroups[jid];
+  deleteRegisteredGroup(jid);
+  logger.info({ jid }, 'Group unregistered (stale channel removed)');
 }
 
 /**
@@ -512,6 +519,7 @@ async function main(): Promise<void> {
     const discord = new DiscordChannel(DISCORD_BOT_TOKEN, {
       ...channelOpts,
       registerGroup,
+      unregisterGroup,
     });
     channels.push(discord);
     await discord.connect();

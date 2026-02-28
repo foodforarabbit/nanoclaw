@@ -28,6 +28,7 @@ export interface DiscordChannelOpts {
   onChatMetadata: OnChatMetadata;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup?: (jid: string, group: RegisteredGroup) => void;
+  unregisterGroup?: (jid: string) => void;
 }
 
 export class DiscordChannel implements Channel {
@@ -216,24 +217,42 @@ export class DiscordChannel implements Channel {
       jid.startsWith('dc:'),
     );
 
-    // Ensure existing auto-channels have requiresTrigger=false
     if (existingDcJid) {
       const existing = groups[existingDcJid];
-      // Track it so we can delete it on shutdown
-      if (existing.name.startsWith('nc-')) {
-        this.autoCreatedChannelId = existingDcJid.replace(/^dc:/, '');
+      const channelId = existingDcJid.replace(/^dc:/, '');
+
+      // Verify the Discord channel still exists
+      let channelStillExists = false;
+      try {
+        const ch = await this.client.channels.fetch(channelId);
+        channelStillExists = ch !== null;
+      } catch {
+        channelStillExists = false;
       }
-      if (existing.requiresTrigger !== false) {
-        logger.info(
-          { jid: existingDcJid },
-          'Updating existing Discord channel to requiresTrigger=false',
-        );
-        this.opts.registerGroup(existingDcJid, {
-          ...existing,
-          requiresTrigger: false,
-        });
+
+      if (channelStillExists) {
+        if (existing.name.startsWith('nc-')) {
+          this.autoCreatedChannelId = channelId;
+        }
+        if (existing.requiresTrigger !== false) {
+          logger.info(
+            { jid: existingDcJid },
+            'Updating existing Discord channel to requiresTrigger=false',
+          );
+          this.opts.registerGroup(existingDcJid, {
+            ...existing,
+            requiresTrigger: false,
+          });
+        }
+        return;
       }
-      return;
+
+      // Channel was deleted externally — clean up the stale registration
+      logger.warn(
+        { jid: existingDcJid, channelId },
+        'Registered Discord channel no longer exists, removing stale entry',
+      );
+      this.opts.unregisterGroup?.(existingDcJid);
     }
 
     try {
