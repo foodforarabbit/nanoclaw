@@ -137,7 +137,10 @@ export class LocalChannel implements Channel {
     try {
       fs.writeFileSync(tempPath, text);
       fs.renameSync(tempPath, filepath);
-      logger.info({ filename, length: text.length }, 'Local outbox response written');
+      logger.info(
+        { filename, length: text.length },
+        'Local outbox response written',
+      );
     } catch (err) {
       logger.error({ err }, 'Failed to write local outbox response');
     }
