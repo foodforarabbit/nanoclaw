@@ -247,7 +247,9 @@ export class DiscordChannel implements Channel {
                 );
               }
               if ('send' in textCh) {
-                await textCh.send('**NanoClaw is back online** — ready for messages.');
+                await textCh.send(
+                  '**NanoClaw is back online** — ready for messages.',
+                );
               }
             }
           } catch (err) {

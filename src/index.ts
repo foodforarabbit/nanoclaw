@@ -77,9 +77,7 @@ function schedulePipeTimeout(chatJid: string, channel: Channel): void {
         { chatJid },
         'Pipe response timeout — closing idle container so messages can be reprocessed',
       );
-      channel
-        .setTyping?.(chatJid, false)
-        ?.catch(() => {});
+      channel.setTyping?.(chatJid, false)?.catch(() => {});
       queue.closeStdin(chatJid);
     }, PIPE_RESPONSE_TIMEOUT_MS),
   );
