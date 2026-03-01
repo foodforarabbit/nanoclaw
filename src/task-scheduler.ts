@@ -240,6 +240,24 @@ export function startSchedulerLoop(deps: SchedulerDependencies): void {
           continue;
         }
 
+        const regGroups = deps.registeredGroups();
+        const currentJid = Object.entries(regGroups).find(
+          ([, g]) => g.folder === currentTask.group_folder,
+        )?.[0];
+
+        if (currentJid && currentJid !== currentTask.chat_jid) {
+          logger.info(
+            {
+              taskId: currentTask.id,
+              oldJid: currentTask.chat_jid,
+              newJid: currentJid,
+            },
+            'Task chat_jid is stale, updating to current channel',
+          );
+          updateTask(currentTask.id, { chat_jid: currentJid });
+          currentTask.chat_jid = currentJid;
+        }
+
         deps.queue.enqueueTask(currentTask.chat_jid, currentTask.id, () =>
           runTask(currentTask, deps),
         );

@@ -61,6 +61,37 @@ let messageLoopRunning = false;
 let whatsapp: WhatsAppChannel;
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+const pipeTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+
+const PIPE_RESPONSE_TIMEOUT_MS = 30_000;
+
+function schedulePipeTimeout(chatJid: string, channel: Channel): void {
+  const existing = pipeTimeouts.get(chatJid);
+  if (existing) clearTimeout(existing);
+
+  pipeTimeouts.set(
+    chatJid,
+    setTimeout(() => {
+      pipeTimeouts.delete(chatJid);
+      logger.warn(
+        { chatJid },
+        'Pipe response timeout — closing idle container so messages can be reprocessed',
+      );
+      channel
+        .setTyping?.(chatJid, false)
+        ?.catch(() => {});
+      queue.closeStdin(chatJid);
+    }, PIPE_RESPONSE_TIMEOUT_MS),
+  );
+}
+
+function clearPipeTimeout(chatJid: string): void {
+  const existing = pipeTimeouts.get(chatJid);
+  if (existing) {
+    clearTimeout(existing);
+    pipeTimeouts.delete(chatJid);
+  }
+}
 
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
@@ -180,6 +211,8 @@ async function processGroupMessages(chatJid: string): Promise<boolean> {
   lastAgentTimestamp[chatJid] =
     missedMessages[missedMessages.length - 1].timestamp;
   saveState();
+
+  clearPipeTimeout(chatJid);
 
   logger.info(
     { group: group.name, messageCount: missedMessages.length },
@@ -424,21 +457,22 @@ async function startMessageLoop(): Promise<void> {
           const formatted = formatMessages(messagesToSend);
 
           if (queue.sendMessage(chatJid, formatted)) {
-            logger.debug(
+            logger.info(
               { chatJid, count: messagesToSend.length },
               'Piped messages to active container',
             );
-            lastAgentTimestamp[chatJid] =
-              messagesToSend[messagesToSend.length - 1].timestamp;
-            saveState();
-            // Show typing indicator while the container processes the piped message
+            // Don't advance lastAgentTimestamp here -- if the piped message
+            // is silently dropped by the container, the messages would be
+            // permanently lost. Leave the cursor behind so drainGroup can
+            // reprocess them in a fresh container (pendingMessages is set
+            // by queue.sendMessage).
             channel
               .setTyping?.(chatJid, true)
               ?.catch((err) =>
                 logger.warn({ chatJid, err }, 'Failed to set typing indicator'),
               );
+            schedulePipeTimeout(chatJid, channel);
           } else {
-            // No active container — enqueue for a new one
             queue.enqueueMessageCheck(chatJid);
           }
         }

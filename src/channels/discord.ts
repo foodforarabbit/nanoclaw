@@ -234,7 +234,6 @@ export class DiscordChannel implements Channel {
         if (existing.name.startsWith('nc-')) {
           this.autoCreatedChannelId = channelId;
 
-          // Reactivate a previously closed channel by stripping the [closed] suffix
           try {
             const ch = await this.client.channels.fetch(channelId);
             if (ch && 'name' in ch) {
@@ -246,6 +245,9 @@ export class DiscordChannel implements Channel {
                   { channelId, oldName: textCh.name, newName: activeName },
                   'Reactivated closed Discord channel',
                 );
+              }
+              if ('send' in textCh) {
+                await textCh.send('**NanoClaw is back online** — ready for messages.');
               }
             }
           } catch (err) {

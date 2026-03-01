@@ -150,12 +150,14 @@ export class GroupQueue {
   /**
    * Send a follow-up message to the active container via IPC file.
    * Returns true if the message was written, false if no active container.
+   * Also marks pendingMessages so drainGroup reprocesses if the pipe fails silently.
    */
   sendMessage(groupJid: string, text: string): boolean {
     const state = this.getGroup(groupJid);
     if (!state.active || !state.groupFolder || state.isTaskContainer)
       return false;
-    state.idleWaiting = false; // Agent is about to receive work, no longer idle
+    state.idleWaiting = false;
+    state.pendingMessages = true;
 
     const inputDir = path.join(DATA_DIR, 'ipc', state.groupFolder, 'input');
     try {
