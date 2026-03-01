@@ -233,6 +233,27 @@ export class DiscordChannel implements Channel {
       if (channelStillExists) {
         if (existing.name.startsWith('nc-')) {
           this.autoCreatedChannelId = channelId;
+
+          // Reactivate a previously closed channel by stripping the [closed] suffix
+          try {
+            const ch = await this.client.channels.fetch(channelId);
+            if (ch && 'name' in ch) {
+              const textCh = ch as TextChannel;
+              if (textCh.name.endsWith('-closed')) {
+                const activeName = textCh.name.replace(/-closed$/, '');
+                await textCh.setName(activeName);
+                logger.info(
+                  { channelId, oldName: textCh.name, newName: activeName },
+                  'Reactivated closed Discord channel',
+                );
+              }
+            }
+          } catch (err) {
+            logger.warn(
+              { channelId, err },
+              'Failed to reactivate closed Discord channel',
+            );
+          }
         }
         if (existing.requiresTrigger !== false) {
           logger.info(
@@ -398,28 +419,29 @@ export class DiscordChannel implements Channel {
   async disconnect(): Promise<void> {
     if (!this.client) return;
 
-    // Delete auto-created channel on shutdown (Codespace going away)
+    // Mark auto-created channel as closed instead of deleting it
     if (this.autoCreatedChannelId) {
       try {
         const channel = await this.client.channels.fetch(
           this.autoCreatedChannelId,
         );
-        if (channel) {
+        if (channel && 'setName' in channel) {
+          const textChannel = channel as TextChannel;
           if ('send' in channel) {
-            await (channel as TextChannel).send(
-              '**NanoClaw shutting down** — deleting this channel.',
-            );
+            await textChannel.send('**NanoClaw shutting down**');
           }
-          await channel.delete();
+          if (!textChannel.name.endsWith('-closed')) {
+            await textChannel.setName(`${textChannel.name}-closed`);
+          }
           logger.info(
             { channelId: this.autoCreatedChannelId },
-            'Deleted auto-created Discord channel on shutdown',
+            'Marked Discord channel as closed',
           );
         }
       } catch (err) {
         logger.warn(
           { channelId: this.autoCreatedChannelId, err },
-          'Failed to delete auto-created Discord channel on shutdown',
+          'Failed to mark Discord channel as closed on shutdown',
         );
       }
     }
