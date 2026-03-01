@@ -12,6 +12,7 @@ import {
   TRIGGER_PATTERN,
 } from './config.js';
 import { DiscordChannel } from './channels/discord.js';
+import { LocalChannel } from './channels/local.js';
 import { WhatsAppChannel } from './channels/whatsapp.js';
 import {
   ContainerOutput,
@@ -532,6 +533,14 @@ async function main(): Promise<void> {
     await whatsapp.connect();
     bench('WhatsApp connected');
   }
+
+  const local = new LocalChannel({
+    ...channelOpts,
+    registerGroup,
+  });
+  channels.push(local);
+  await local.connect();
+  bench('Local channel connected');
 
   bench('All channels ready');
 

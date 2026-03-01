@@ -10,7 +10,14 @@ import {
   TIMEZONE,
 } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import {
+  createTask,
+  deleteTask,
+  getTaskById,
+  storeChatMetadata,
+  storeMessage,
+  updateTask,
+} from './db.js';
 import { isValidGroupFolder } from './group-folder.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
@@ -170,6 +177,9 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For inject_message
+    sender?: string;
+    senderName?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -380,6 +390,62 @@ export async function processTaskIpc(
         );
       }
       break;
+
+    case 'inject_message': {
+      if (!data.prompt) {
+        logger.warn('inject_message missing prompt');
+        break;
+      }
+
+      // Default to the main group's JID if no target specified
+      const injectTargetJid =
+        data.targetJid ||
+        Object.entries(registeredGroups).find(
+          ([, g]) => g.folder === MAIN_GROUP_FOLDER,
+        )?.[0];
+
+      if (!injectTargetJid) {
+        logger.warn('inject_message: no target JID and no main group found');
+        break;
+      }
+
+      const injectTarget = registeredGroups[injectTargetJid];
+      if (!injectTarget) {
+        logger.warn(
+          { targetJid: injectTargetJid },
+          'inject_message: target group not registered',
+        );
+        break;
+      }
+
+      if (!isMain && injectTarget.folder !== sourceGroup) {
+        logger.warn(
+          { sourceGroup, targetFolder: injectTarget.folder },
+          'Unauthorized inject_message attempt blocked',
+        );
+        break;
+      }
+
+      const injectTimestamp = new Date().toISOString();
+
+      // Ensure chat entry exists (messages table has FK on chats.jid)
+      storeChatMetadata(injectTargetJid, injectTimestamp);
+
+      storeMessage({
+        id: `inject-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        chat_jid: injectTargetJid,
+        sender: data.sender || 'local',
+        sender_name: data.senderName || 'Local Process',
+        content: data.prompt,
+        timestamp: injectTimestamp,
+      });
+
+      logger.info(
+        { sourceGroup, targetJid: injectTargetJid, sender: data.sender },
+        'Message injected via IPC',
+      );
+      break;
+    }
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');

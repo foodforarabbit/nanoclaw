@@ -4,6 +4,7 @@ import {
   _initTestDatabase,
   createTask,
   getAllTasks,
+  getMessagesSince,
   getRegisteredGroup,
   getTaskById,
   setRegisteredGroup,
@@ -669,5 +670,112 @@ describe('register_group success', () => {
     );
 
     expect(getRegisteredGroup('partial@g.us')).toBeUndefined();
+  });
+});
+
+// --- inject_message authorization ---
+
+describe('inject_message', () => {
+  it('main group can inject a message to main group (default target)', async () => {
+    await processTaskIpc(
+      {
+        type: 'inject_message',
+        prompt: 'hello from local',
+        sender: 'test-script',
+        senderName: 'Test Script',
+      },
+      'main',
+      true,
+      deps,
+    );
+
+    const messages = getMessagesSince('main@g.us', '', 'Andy');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('hello from local');
+    expect(messages[0].sender).toBe('test-script');
+    expect(messages[0].sender_name).toBe('Test Script');
+    expect(messages[0].chat_jid).toBe('main@g.us');
+  });
+
+  it('main group can inject a message to another group via targetJid', async () => {
+    await processTaskIpc(
+      {
+        type: 'inject_message',
+        prompt: 'hello other group',
+        targetJid: 'other@g.us',
+      },
+      'main',
+      true,
+      deps,
+    );
+
+    const messages = getMessagesSince('other@g.us', '', 'Andy');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('hello other group');
+    expect(messages[0].sender).toBe('local');
+    expect(messages[0].sender_name).toBe('Local Process');
+  });
+
+  it('non-main group can inject to its own group', async () => {
+    await processTaskIpc(
+      {
+        type: 'inject_message',
+        prompt: 'self inject',
+        targetJid: 'other@g.us',
+      },
+      'other-group',
+      false,
+      deps,
+    );
+
+    const messages = getMessagesSince('other@g.us', '', 'Andy');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('self inject');
+  });
+
+  it('non-main group cannot inject to another group', async () => {
+    await processTaskIpc(
+      {
+        type: 'inject_message',
+        prompt: 'unauthorized inject',
+        targetJid: 'main@g.us',
+      },
+      'other-group',
+      false,
+      deps,
+    );
+
+    const messages = getMessagesSince('main@g.us', '', 'Andy');
+    expect(messages).toHaveLength(0);
+  });
+
+  it('rejects inject_message with no prompt', async () => {
+    await processTaskIpc(
+      {
+        type: 'inject_message',
+      },
+      'main',
+      true,
+      deps,
+    );
+
+    const messages = getMessagesSince('main@g.us', '', 'Andy');
+    expect(messages).toHaveLength(0);
+  });
+
+  it('rejects inject_message targeting unregistered JID', async () => {
+    await processTaskIpc(
+      {
+        type: 'inject_message',
+        prompt: 'to nowhere',
+        targetJid: 'unknown@g.us',
+      },
+      'main',
+      true,
+      deps,
+    );
+
+    const messages = getMessagesSince('unknown@g.us', '', 'Andy');
+    expect(messages).toHaveLength(0);
   });
 });
