@@ -247,9 +247,10 @@ export class DiscordChannel implements Channel {
                 );
               }
               if ('send' in textCh) {
-                await textCh.send(
+                const msg = await textCh.send(
                   '**NanoClaw is back online** — ready for messages.',
                 );
+                await msg.pin().catch(() => {});
               }
             }
           } catch (err) {
@@ -366,7 +367,8 @@ export class DiscordChannel implements Channel {
           .join('\n');
       }
 
-      await channel.send(welcome);
+      const welcomeMsg = await channel.send(welcome);
+      await welcomeMsg.pin().catch(() => {});
       logger.info(
         { channelName, channelId: channel.id, guildId: DISCORD_GUILD_ID },
         'Auto-created Discord channel',
