@@ -42,13 +42,19 @@ const server = new McpServer({
 
 server.tool(
   'send_message',
-  "Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Note: when running as a scheduled task, your final output is NOT sent to the user — use this tool if you need to communicate with the user or group.",
+  `Send a message to the user or group immediately while you're still running. Use this for progress updates or to send multiple messages. You can call this multiple times. Note: when running as a scheduled task, your final output is NOT sent to the user — use this tool if you need to communicate with the user or group.
+
+To send images, videos, or other files, use the attachments parameter with absolute file paths (e.g. files you created under /workspace/group/).`,
   {
     text: z.string().describe('The message text to send'),
     sender: z.string().optional().describe('Your role/identity name (e.g. "Researcher"). When set, messages appear from a dedicated bot in Telegram.'),
+    attachments: z.array(z.object({
+      path: z.string().describe('Absolute file path to the attachment (e.g. /workspace/group/chart.png)'),
+      name: z.string().optional().describe('Display filename (defaults to the basename of the path)'),
+    })).optional().describe('Files to attach (images, videos, documents). Supported on Discord; other channels will ignore attachments.'),
   },
-  async (args: { text: string; sender?: string }) => {
-    const data: Record<string, string | undefined> = {
+  async (args: { text: string; sender?: string; attachments?: Array<{ path: string; name?: string }> }) => {
+    const data: Record<string, unknown> = {
       type: 'message',
       chatJid,
       text: args.text,
@@ -56,6 +62,13 @@ server.tool(
       groupFolder,
       timestamp: new Date().toISOString(),
     };
+
+    if (args.attachments?.length) {
+      data.attachments = args.attachments.map((a) => ({
+        path: a.path,
+        name: a.name || path.basename(a.path),
+      }));
+    }
 
     writeIpcFile(MESSAGES_DIR, data);
 

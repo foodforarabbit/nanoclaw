@@ -128,7 +128,11 @@ export class LocalChannel implements Channel {
     this.pollTimer = setTimeout(() => this.pollInbox(), LOCAL_POLL_INTERVAL);
   }
 
-  async sendMessage(_jid: string, text: string): Promise<void> {
+  async sendMessage(
+    _jid: string,
+    text: string,
+    _attachments?: import('../types.js').Attachment[],
+  ): Promise<void> {
     const timestamp = Date.now();
     const filename = `${timestamp}-${Math.random().toString(36).slice(2, 8)}.txt`;
     const filepath = path.join(this.outboxDir, filename);

@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 
 import {
+  AttachmentBuilder,
   ChannelType,
   Client,
   Events,
@@ -17,6 +18,7 @@ import {
 } from '../config.js';
 import { logger } from '../logger.js';
 import {
+  Attachment,
   Channel,
   OnChatMetadata,
   OnInboundMessage,
@@ -382,7 +384,11 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  async sendMessage(jid: string, text: string): Promise<void> {
+  async sendMessage(
+    jid: string,
+    text: string,
+    attachments?: Attachment[],
+  ): Promise<void> {
     if (!this.client) {
       logger.warn('Discord client not initialized');
       return;
@@ -398,20 +404,58 @@ export class DiscordChannel implements Channel {
       }
 
       const textChannel = channel as TextChannel;
+      const files = this.buildAttachments(attachments);
 
-      // Discord has a 2000 character limit per message — split if needed
       const MAX_LENGTH = 2000;
       if (text.length <= MAX_LENGTH) {
-        await textChannel.send(text);
+        await textChannel.send({ content: text || undefined, files });
       } else {
+        // Send text in chunks; attach files to the first chunk only
         for (let i = 0; i < text.length; i += MAX_LENGTH) {
-          await textChannel.send(text.slice(i, i + MAX_LENGTH));
+          const chunk = text.slice(i, i + MAX_LENGTH);
+          const opts: { content: string; files?: AttachmentBuilder[] } = {
+            content: chunk,
+          };
+          if (i === 0 && files.length > 0) opts.files = files;
+          await textChannel.send(opts);
         }
       }
-      logger.info({ jid, length: text.length }, 'Discord message sent');
+
+      logger.info(
+        { jid, length: text.length, attachmentCount: files.length },
+        'Discord message sent',
+      );
     } catch (err) {
       logger.error({ jid, err }, 'Failed to send Discord message');
     }
+  }
+
+  private buildAttachments(
+    attachments?: Attachment[],
+  ): AttachmentBuilder[] {
+    if (!attachments?.length) return [];
+
+    const builders: AttachmentBuilder[] = [];
+    for (const att of attachments) {
+      try {
+        if (!fs.existsSync(att.path)) {
+          logger.warn(
+            { path: att.path },
+            'Attachment file not found, skipping',
+          );
+          continue;
+        }
+        const builder = new AttachmentBuilder(att.path);
+        if (att.name) builder.setName(att.name);
+        builders.push(builder);
+      } catch (err) {
+        logger.warn(
+          { path: att.path, err },
+          'Failed to build attachment, skipping',
+        );
+      }
+    }
+    return builders;
   }
 
   isConnected(): boolean {

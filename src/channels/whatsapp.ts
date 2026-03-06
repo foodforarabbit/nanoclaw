@@ -232,11 +232,11 @@ export class WhatsAppChannel implements Channel {
     });
   }
 
-  async sendMessage(jid: string, text: string): Promise<void> {
-    // Prefix bot messages with assistant name so users know who's speaking.
-    // On a shared number, prefix is also needed in DMs (including self-chat)
-    // to distinguish bot output from user messages.
-    // Skip only when the assistant has its own dedicated phone number.
+  async sendMessage(
+    jid: string,
+    text: string,
+    _attachments?: import('../types.js').Attachment[],
+  ): Promise<void> {
     const prefixed = ASSISTANT_HAS_OWN_NUMBER
       ? text
       : `${ASSISTANT_NAME}: ${text}`;

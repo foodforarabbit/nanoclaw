@@ -78,14 +78,23 @@ export interface TaskRunLog {
 
 // --- Channel abstraction ---
 
+export interface Attachment {
+  path: string;
+  name?: string;
+  contentType?: string;
+}
+
 export interface Channel {
   name: string;
   connect(): Promise<void>;
-  sendMessage(jid: string, text: string): Promise<void>;
+  sendMessage(
+    jid: string,
+    text: string,
+    attachments?: Attachment[],
+  ): Promise<void>;
   isConnected(): boolean;
   ownsJid(jid: string): boolean;
   disconnect(): Promise<void>;
-  // Optional: typing indicator. Channels that support it implement it.
   setTyping?(jid: string, isTyping: boolean): Promise<void>;
 }
 

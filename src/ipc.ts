@@ -18,12 +18,20 @@ import {
   storeMessage,
   updateTask,
 } from './db.js';
-import { isValidGroupFolder } from './group-folder.js';
+import {
+  isValidGroupFolder,
+  resolveGroupFolderPath,
+  resolveGroupIpcPath,
+} from './group-folder.js';
 import { logger } from './logger.js';
-import { RegisteredGroup } from './types.js';
+import { Attachment, RegisteredGroup } from './types.js';
 
 export interface IpcDeps {
-  sendMessage: (jid: string, text: string) => Promise<void>;
+  sendMessage: (
+    jid: string,
+    text: string,
+    attachments?: Attachment[],
+  ) => Promise<void>;
   registeredGroups: () => Record<string, RegisteredGroup>;
   registerGroup: (jid: string, group: RegisteredGroup) => void;
   syncGroupMetadata: (force: boolean) => Promise<void>;
@@ -34,6 +42,26 @@ export interface IpcDeps {
     availableGroups: AvailableGroup[],
     registeredJids: Set<string>,
   ) => void;
+}
+
+/**
+ * Map a container-side path back to the corresponding host path.
+ * Containers mount /workspace/group → groups/{folder} and
+ * /workspace/ipc → data/ipc/{folder}, so we reverse those mappings.
+ */
+function resolveContainerPathToHost(
+  containerPath: string,
+  groupFolder: string,
+): string | null {
+  if (containerPath.startsWith('/workspace/group/')) {
+    const relative = containerPath.slice('/workspace/group/'.length);
+    return path.join(resolveGroupFolderPath(groupFolder), relative);
+  }
+  if (containerPath.startsWith('/workspace/ipc/')) {
+    const relative = containerPath.slice('/workspace/ipc/'.length);
+    return path.join(resolveGroupIpcPath(groupFolder), relative);
+  }
+  return null;
 }
 
 let ipcWatcherRunning = false;
@@ -80,15 +108,46 @@ export function startIpcWatcher(deps: IpcDeps): void {
             try {
               const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
               if (data.type === 'message' && data.chatJid && data.text) {
-                // Authorization: verify this group can send to this chatJid
                 const targetGroup = registeredGroups[data.chatJid];
                 if (
                   isMain ||
                   (targetGroup && targetGroup.folder === sourceGroup)
                 ) {
-                  await deps.sendMessage(data.chatJid, data.text);
+                  let resolvedAttachments: Attachment[] | undefined;
+                  if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+                    resolvedAttachments = [];
+                    for (const att of data.attachments) {
+                      const hostPath = resolveContainerPathToHost(att.path, sourceGroup);
+                      if (!hostPath) {
+                        logger.warn(
+                          { containerPath: att.path, sourceGroup },
+                          'Attachment path outside allowed mounts, skipping',
+                        );
+                        continue;
+                      }
+                      if (!fs.existsSync(hostPath)) {
+                        logger.warn(
+                          { hostPath, containerPath: att.path },
+                          'Attachment file not found on host, skipping',
+                        );
+                        continue;
+                      }
+                      resolvedAttachments.push({
+                        path: hostPath,
+                        name: att.name || path.basename(hostPath),
+                        contentType: att.contentType,
+                      });
+                    }
+                    if (resolvedAttachments.length === 0) resolvedAttachments = undefined;
+                  }
+
+                  await deps.sendMessage(data.chatJid, data.text, resolvedAttachments);
                   logger.info(
-                    { chatJid: data.chatJid, sourceGroup },
+                    {
+                      chatJid: data.chatJid,
+                      sourceGroup,
+                      attachmentCount: resolvedAttachments?.length ?? 0,
+                    },
                     'IPC message sent',
                   );
                 } else {
