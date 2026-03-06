@@ -430,9 +430,7 @@ export class DiscordChannel implements Channel {
     }
   }
 
-  private buildAttachments(
-    attachments?: Attachment[],
-  ): AttachmentBuilder[] {
+  private buildAttachments(attachments?: Attachment[]): AttachmentBuilder[] {
     if (!attachments?.length) return [];
 
     const builders: AttachmentBuilder[] = [];

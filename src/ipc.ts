@@ -114,10 +114,16 @@ export function startIpcWatcher(deps: IpcDeps): void {
                   (targetGroup && targetGroup.folder === sourceGroup)
                 ) {
                   let resolvedAttachments: Attachment[] | undefined;
-                  if (Array.isArray(data.attachments) && data.attachments.length > 0) {
+                  if (
+                    Array.isArray(data.attachments) &&
+                    data.attachments.length > 0
+                  ) {
                     resolvedAttachments = [];
                     for (const att of data.attachments) {
-                      const hostPath = resolveContainerPathToHost(att.path, sourceGroup);
+                      const hostPath = resolveContainerPathToHost(
+                        att.path,
+                        sourceGroup,
+                      );
                       if (!hostPath) {
                         logger.warn(
                           { containerPath: att.path, sourceGroup },
@@ -138,10 +144,15 @@ export function startIpcWatcher(deps: IpcDeps): void {
                         contentType: att.contentType,
                       });
                     }
-                    if (resolvedAttachments.length === 0) resolvedAttachments = undefined;
+                    if (resolvedAttachments.length === 0)
+                      resolvedAttachments = undefined;
                   }
 
-                  await deps.sendMessage(data.chatJid, data.text, resolvedAttachments);
+                  await deps.sendMessage(
+                    data.chatJid,
+                    data.text,
+                    resolvedAttachments,
+                  );
                   logger.info(
                     {
                       chatJid: data.chatJid,
